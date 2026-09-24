@@ -4,37 +4,58 @@ on:
   workflow_dispatch:
     inputs:
       target_keyword:
-        description: 'Aranacak Sektor'
+        description: 'Aranacak Sektör / Anahtar Kelime'
         required: true
-        default: 'Tekstil Toptan'
+        default: 'Tekstil Toptan İhracat'
       target_region:
-        description: 'Hedef Sehir'
+        description: 'Hedef Şehir / Bölge'
         required: true
-        default: 'Istanbul'
+        default: 'İstanbul'
+  # İsteğe bağlı zamanlanmış görev (Örn: Her sabah 09:00 UTC)
+  # schedule:
+  #   - cron: '0 9 * * *'
 
 jobs:
-  scrape-job:
+  scrape-matrix:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Tek bir workflow içinde 3 paralel alt-işçi çalıştırır
+        sub_worker: [1, 2, 3]
+
     steps:
       - name: Kodu Klonla
         uses: actions/checkout@v4
 
-      - name: Python Kur
+      - name: Python 3.11 Kur
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Paketleri Yukle
+      - name: Bağımlılıkları Yükle
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Bulut Kazimayi Calistir
+      - name: Scrapling & Playwright Tarayıcılarını Kur
+        run: |
+          playwright install chromium --with-deps || true
+
+      - name: Bulut Taramasını Başlat
         env:
           MONGO_URI: ${{ secrets.MONGO_URI }}
-          TARGET_KEYWORD: ${{ github.event.inputs.target_keyword }}
-          TARGET_REGION: ${{ github.event.inputs.target_region }}
-          WORKER_ID: "${{ github.repository }}-cloud-worker"
+          TARGET_KEYWORD: ${{ github.event.inputs.target_keyword || 'Tekstil Toptan' }}
+          TARGET_REGION: ${{ github.event.inputs.target_region || 'İstanbul' }}
+          WORKER_ID: "${{ github.repository }}-worker-${{ matrix.sub_worker }}"
         run: |
           python github_worker.py
+
+      - name: Sonuçları Güvenli Depola (Artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-leads-${{ matrix.sub_worker }}
+          path: cloud_leads.json
+          if-no-files-found: ignore
