@@ -1,0 +1,40 @@
+name: Distributed B2B Scraper Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_keyword:
+        description: 'Aranacak Sektor'
+        required: true
+        default: 'Tekstil Toptan'
+      target_region:
+        description: 'Hedef Sehir'
+        required: true
+        default: 'Istanbul'
+
+jobs:
+  scrape-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu Klonla
+        uses: actions/checkout@v4
+
+      - name: Python Kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Paketleri Yukle
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Bulut Kazimayi Calistir
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          TARGET_KEYWORD: ${{ github.event.inputs.target_keyword }}
+          TARGET_REGION: ${{ github.event.inputs.target_region }}
+          WORKER_ID: "${{ github.repository }}-cloud-worker"
+        run: |
+          python github_worker.py
