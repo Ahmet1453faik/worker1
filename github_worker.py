@@ -99,10 +99,13 @@ async def search_web_engines(query: str, session: aiohttp.ClientSession) -> List
         try:
             b_url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&first={offset}"
             async with session.get(b_url, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                print(f"[Bing] HTTP {resp.status} (offset={offset})")
                 if resp.status == 200:
                     body = await resp.text()
                     parser = LexborHTMLParser(body)
-                    for node in parser.css("li.b_algo"):
+                    nodes = parser.css("li.b_algo")
+                    print(f"[Bing] Bulunan element sayısı: {len(nodes)}")
+                    for node in nodes:
                         title_node = node.css_first("h2 a")
                         if not title_node:
                             continue
@@ -124,10 +127,13 @@ async def search_web_engines(query: str, session: aiohttp.ClientSession) -> List
             ddg_headers = dict(headers)
             ddg_headers["Content-Type"] = "application/x-www-form-urlencoded"
             async with session.post("https://html.duckduckgo.com/html/", data={"q": query}, headers=ddg_headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                print(f"[DDG] HTTP {resp.status}")
                 if resp.status == 200:
                     body = await resp.text()
                     parser = LexborHTMLParser(body)
-                    for node in parser.css(".result, .web-result"):
+                    nodes = parser.css(".result, .web-result")
+                    print(f"[DDG] Bulunan element sayısı: {len(nodes)}")
+                    for node in nodes:
                         t_node = node.css_first(".result__title .result__a")
                         if not t_node:
                             continue
@@ -149,6 +155,34 @@ async def search_web_engines(query: str, session: aiohttp.ClientSession) -> List
                                     results.append({"name": title.split("-")[0].split("|")[0].strip(), "website": target})
         except Exception as e:
             print(f"[DDG Error] {e}")
+
+    # 3. DuckDuckGo GET /lite/ Fallback (bulut IP'lerinde engelsiz en hafif versiyon)
+    if len(results) < 10:
+        try:
+            lite_url = f"https://lite.duckduckgo.com/lite/?q={urllib.parse.quote(query)}"
+            async with session.get(lite_url, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                print(f"[DDG-Lite] HTTP {resp.status}")
+                if resp.status == 200:
+                    body = await resp.text()
+                    parser = LexborHTMLParser(body)
+                    for a in parser.css("a.result-link"):
+                        raw_href = a.attributes.get("href", "")
+                        title = a.text(strip=True)
+                        if "uddg=" in raw_href:
+                            qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
+                            target = qs.get("uddg", [None])[0]
+                        else:
+                            target = raw_href
+                        if target and target.startswith("http"):
+                            host = URL(target).host or ""
+                            clean_h = host.lower().removeprefix("www.")
+                            if clean_h and not any(clean_h == s or clean_h.endswith("." + s) for s in SKIP_DOMAINS):
+                                if clean_h not in seen:
+                                    seen.add(clean_h)
+                                    results.append({"name": title.split("-")[0].split("|")[0].strip(), "website": target})
+                    print(f"[DDG-Lite] Toplam sonuç: {len(results)}")
+        except Exception as e:
+            print(f"[DDG-Lite Error] {e}")
 
     return results
 
