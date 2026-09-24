@@ -84,45 +84,71 @@ def extract_contacts(html_text: str):
 
     return list(emails), list(phones), list(ig_links), list(li_links)
 
-async def search_duckduckgo(query: str, session: aiohttp.ClientSession) -> List[Dict[str, str]]:
-    url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+async def search_web_engines(query: str, session: aiohttp.ClientSession) -> List[Dict[str, str]]:
     results = []
-    try:
-        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            if resp.status == 200:
-                body = await resp.text()
-                parser = LexborHTMLParser(body)
-                for node in parser.css(".result"):
-                    title_elem = node.css_first(".result__title .result__a")
-                    snip_elem = node.css_first(".result__snippet")
-                    if not title_elem:
-                        continue
-                    raw_href = title_elem.attributes.get("href", "")
-                    title = title_elem.text(strip=True)
-                    snippet = snip_elem.text(strip=True) if snip_elem else ""
+    seen = set()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
 
-                    # clean duckduckgo URL
-                    target_url = None
-                    if "uddg=" in raw_href:
-                        parsed = urllib.parse.urlparse(raw_href)
-                        qs = urllib.parse.parse_qs(parsed.query)
-                        if "uddg" in qs:
-                            target_url = qs["uddg"][0]
-                    elif raw_href.startswith("http"):
-                        target_url = raw_href
+    # 1. Bing Search Motoru
+    for offset in [1, 11]:
+        try:
+            b_url = f"https://www.bing.com/search?q={urllib.parse.quote(query)}&first={offset}"
+            async with session.get(b_url, headers=headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                if resp.status == 200:
+                    body = await resp.text()
+                    parser = LexborHTMLParser(body)
+                    for node in parser.css("li.b_algo"):
+                        title_node = node.css_first("h2 a")
+                        if not title_node:
+                            continue
+                        title = title_node.text(strip=True)
+                        raw_href = title_node.attributes.get("href", "")
+                        if raw_href.startswith("http"):
+                            host = URL(raw_href).host or ""
+                            clean_h = host.lower().removeprefix("www.")
+                            if clean_h and not any(clean_h == s or clean_h.endswith("." + s) for s in SKIP_DOMAINS):
+                                if clean_h not in seen:
+                                    seen.add(clean_h)
+                                    results.append({"name": title.split("-")[0].split("|")[0].strip(), "website": raw_href})
+        except Exception as e:
+            print(f"[Bing Error] {e}")
 
-                    if target_url:
-                        host = URL(target_url).host or ""
-                        clean_host = host.lower().removeprefix("www.")
-                        if clean_host and not any(clean_host == s or clean_host.endswith("." + s) for s in SKIP_DOMAINS):
-                            results.append({
-                                "name": title.split("-")[0].split("|")[0].strip(),
-                                "website": target_url,
-                                "snippet": snippet
-                            })
-    except Exception as e:
-        print(f"[Search Error] {e}")
+    # 2. DuckDuckGo POST Motoru
+    if len(results) < 15:
+        try:
+            ddg_headers = dict(headers)
+            ddg_headers["Content-Type"] = "application/x-www-form-urlencoded"
+            async with session.post("https://html.duckduckgo.com/html/", data={"q": query}, headers=ddg_headers, timeout=aiohttp.ClientTimeout(total=12)) as resp:
+                if resp.status == 200:
+                    body = await resp.text()
+                    parser = LexborHTMLParser(body)
+                    for node in parser.css(".result, .web-result"):
+                        t_node = node.css_first(".result__title .result__a")
+                        if not t_node:
+                            continue
+                        title = t_node.text(strip=True)
+                        raw_href = t_node.attributes.get("href", "")
+                        target = None
+                        if "uddg=" in raw_href:
+                            qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw_href).query)
+                            if "uddg" in qs:
+                                target = qs["uddg"][0]
+                        elif raw_href.startswith("http"):
+                            target = raw_href
+                        if target:
+                            host = URL(target).host or ""
+                            clean_h = host.lower().removeprefix("www.")
+                            if clean_h and not any(clean_h == s or clean_h.endswith("." + s) for s in SKIP_DOMAINS):
+                                if clean_h not in seen:
+                                    seen.add(clean_h)
+                                    results.append({"name": title.split("-")[0].split("|")[0].strip(), "website": target})
+        except Exception as e:
+            print(f"[DDG Error] {e}")
+
     return results
 
 async def crawl_site(company: Dict[str, str], session: aiohttp.ClientSession) -> Dict[str, Any]:
@@ -178,7 +204,7 @@ async def main():
     query = f"{TARGET_KEYWORD} {TARGET_REGION} iletişim"
     print(f"🔍 Arama yapılıyor: {query}")
     async with aiohttp.ClientSession() as session:
-        found_companies = await search_duckduckgo(query, session)
+        found_companies = await search_web_engines(query, session)
         print(f"✓ {len(found_companies)} aday web sitesi tespit edildi.")
 
         if not found_companies:
