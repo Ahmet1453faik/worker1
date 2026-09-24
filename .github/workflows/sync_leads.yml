@@ -1,0 +1,27 @@
+name: Sync Local Leads to MongoDB Atlas
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu Klonla
+        uses: actions/checkout@v4
+
+      - name: Python Kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Paketleri Yukle
+        run: |
+          pip install pymongo dnspython
+
+      - name: Atlas'a Eşitle
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: |
+          python sync_to_mongo.py
