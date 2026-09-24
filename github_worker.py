@@ -204,7 +204,8 @@ async def main():
     # Arama Yap
     query = f"{TARGET_KEYWORD} {TARGET_REGION} iletişim"
     print(f"🔍 Arama yapılıyor: {query}")
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(resolver=aiohttp.ThreadedResolver(), ssl=False)
+    async with aiohttp.ClientSession(connector=connector) as session:
         found_companies = await search_web_engines(query, session)
         print(f"✓ {len(found_companies)} aday web sitesi tespit edildi.")
 
