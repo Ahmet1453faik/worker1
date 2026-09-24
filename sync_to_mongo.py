@@ -28,11 +28,25 @@ def main():
 
     ops = []
     for l in leads:
-        l["_worker"] = "local-pc-synced"
-        web = (l.get("Web Sitesi") or "").strip()
-        name = (l.get("Firma Adı") or "").strip()
+        # NaN temizliği
+        clean_lead = {}
+        for k, v in l.items():
+            if v is None or (isinstance(v, float) and str(v) == "nan"):
+                clean_lead[k] = ""
+            else:
+                clean_lead[k] = v
+
+        clean_lead["_worker"] = "local-pc-synced"
+        web = str(clean_lead.get("Web Sitesi") or "").strip()
+        if web.lower() == "nan": web = ""
+        name = str(clean_lead.get("Firma Adı") or "").strip()
+        if name.lower() == "nan": name = ""
+
+        if not web and not name:
+            continue
+
         fil = {"Web Sitesi": web} if (web and len(web) > 4) else {"Firma Adı": name}
-        ops.append(UpdateOne(fil, {"$set": l}, upsert=True))
+        ops.append(UpdateOne(fil, {"$set": clean_lead}, upsert=True))
 
     if ops:
         res = col.bulk_write(ops, ordered=False)
