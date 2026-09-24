@@ -252,6 +252,16 @@ async def main():
         tasks = [crawl_site(comp, session) for comp in found_companies[:30]]
         scraped_leads = await asyncio.gather(*tasks)
 
+    # Yerel JSON Yedeği (GitHub Artifact & API İçin)
+    if scraped_leads:
+        try:
+            import json
+            with open("cloud_leads.json", "w", encoding="utf-8") as f:
+                json.dump(scraped_leads, f, ensure_ascii=False, indent=2)
+            print(f"📁 {len(scraped_leads)} firma cloud_leads.json dosyasına yazıldı.")
+        except Exception as e:
+            print(f"JSON kayıt hatası: {e}")
+
     # MongoDB Atlas'a Toplu Kayıt
     if leads_col is not None and scraped_leads:
         ops = []
